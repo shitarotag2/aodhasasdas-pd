@@ -334,15 +334,9 @@ function Esp:init()
 			return Vector2.new(s.X, s.Y), inB, s.Z
 		end
 	end
-
-	self.rendCon = run.RenderStepped:Connect(function(dt)
-		self:Upd(dt)
-		self:Ren(dt)
-	end)
 end
 
 function Esp:Dest()
-	self.rendCon:Disconnect()
 	for i = 1, #self.bin do
 		self.bin[i]:Remove()
 	end
@@ -1105,13 +1099,9 @@ function Cham:init()
 	self.hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
 	self.matCache = {}
 	self.acc = 0
-	self.upCon = run.RenderStepped:Connect(function(dt)
-		self:Upd(dt)
-	end)
 end
 
 function Cham:Dest()
-	self.upCon:Disconnect()
 	if self.hl then self.hl:Destroy() end
 	self:ClearOcclusion()
 	self:RestoreMaterials()
@@ -1288,10 +1278,6 @@ function Inst:init()
 	self.txt.Center = true
 	self.gtxt = {}
 	self.ph = math.random()
-
-	self.rendCon = run.RenderStepped:Connect(function(dt)
-		self:Ren(dt)
-	end)
 end
 
 function Inst:drawGrad(text, cx, cy, sz, fnt, out, oc, tr, c1, c2, off)
@@ -1331,7 +1317,6 @@ function Inst:hideGrad()
 end
 
 function Inst:Dest()
-	self.rendCon:Disconnect()
 	self.txt:Remove()
 	for i = 1, #self.gtxt do pcall(function() self.gtxt[i]:Remove() end) end
 	self.gtxt = {}
@@ -1604,6 +1589,21 @@ function Itf.Load()
 
 	Itf.pAdd = plrs.PlayerAdded:Connect(add)
 	Itf.pRem = plrs.PlayerRemoving:Connect(rem)
+	
+	Itf.mainRender = run.RenderStepped:Connect(function(dt)
+		for _, objs in next, Itf._objCache do
+			for i = 1, #objs do
+				local obj = objs[i]
+				if obj.Upd then
+					obj:Upd(dt)
+				end
+				if obj.Ren then
+					obj:Ren(dt)
+				end
+			end
+		end
+	end)
+	
 	Itf._loaded = true
 end
 
@@ -1656,6 +1656,11 @@ end
 
 function Itf.Unload()
 	assert(Itf._loaded, "Not loaded.")
+
+	if Itf.mainRender then
+		Itf.mainRender:Disconnect()
+		Itf.mainRender = nil
+	end
 
 	for idx, o in next, Itf._objCache do
 		for i = 1, #o do
