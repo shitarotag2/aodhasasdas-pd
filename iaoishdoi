@@ -271,7 +271,12 @@ function Esp:init()
 	self.playerConns = {}
 	
 	if self.plr then
+		local isLocalPlayer = self.plr == lp
+		
 		local function onCharacterAdded(char)
+			if isLocalPlayer then
+				print("[ESP DEBUG] CharacterAdded для локального игрока:", char)
+			end
 			task.wait(0.1)
 			cl(self.charCache)
 			self.cacheChar = char
@@ -284,11 +289,60 @@ function Esp:init()
 				pcall(function() conn:Disconnect() end)
 			end
 			cl(self.charConns)
+			
+			if char and isLocalPlayer then
+				self.charConns.childAdded = char.ChildAdded:Connect(function(child)
+					print("[ESP DEBUG] ChildAdded в персонаже:", child.Name, child.ClassName)
+					cl(self.charCache)
+					self.bodyPartsHash = nil
+					self.skelHash = nil
+				end)
+				
+				self.charConns.childRemoved = char.ChildRemoved:Connect(function(child)
+					print("[ESP DEBUG] ChildRemoved из персонажа:", child.Name, child.ClassName)
+					cl(self.charCache)
+					self.bodyPartsHash = nil
+					self.skelHash = nil
+				end)
+				
+				self.charConns.descendantAdded = char.DescendantAdded:Connect(function(desc)
+					if desc:IsA("BasePart") and isBP(desc.Name) then
+						print("[ESP DEBUG] Новая часть тела добавлена:", desc.Name, desc:GetFullName())
+						cl(self.charCache)
+						self.bodyPartsHash = nil
+						self.skelHash = nil
+					end
+				end)
+				
+				self.charConns.descendantRemoving = char.DescendantRemoving:Connect(function(desc)
+					if desc:IsA("BasePart") and isBP(desc.Name) then
+						print("[ESP DEBUG] Часть тела удаляется:", desc.Name, desc:GetFullName())
+						cl(self.charCache)
+						self.bodyPartsHash = nil
+						self.skelHash = nil
+					end
+				end)
+				
+				local hum = char:FindFirstChildOfClass("Humanoid")
+				if hum then
+					self.charConns.died = hum.Died:Connect(function()
+						print("[ESP DEBUG] Humanoid умер")
+						cl(self.charCache)
+						self.bodyPartsHash = nil
+						self.skelHash = nil
+					end)
+				end
+				
+				print("[ESP DEBUG] Все хуки установлены для локального игрока")
+			end
 		end
 		
 		self.playerConns[1] = self.plr.CharacterAdded:Connect(onCharacterAdded)
 		
 		if self.plr.Character then
+			if isLocalPlayer then
+				print("[ESP DEBUG] Персонаж уже существует при инициализации:", self.plr.Character)
+			end
 			task.spawn(function()
 				onCharacterAdded(self.plr.Character)
 			end)
@@ -722,6 +776,14 @@ function Esp:Upd()
             end
         end
         
+        if self.plr == lp and #validParts > 0 and not self._printedParts then
+            print("[ESP DEBUG] Найдено частей тела:", #validParts)
+            for i, p in ipairs(validParts) do
+                print("  -", p.Name, p:GetFullName())
+            end
+            self._printedParts = true
+        end
+        
         local currentHash = #validParts
         for i = 1, #validParts do
             local p = validParts[i]
@@ -731,6 +793,11 @@ function Esp:Upd()
         end
         
         if not ch[1] or self.bodyPartsHash ~= currentHash or (now - self.lastCacheTime) > 0.3 then
+            if self.plr == lp and self.bodyPartsHash and self.bodyPartsHash ~= currentHash then
+                print("[ESP DEBUG] Хеш изменился! Старый:", self.bodyPartsHash, "Новый:", currentHash)
+                self._printedParts = false
+            end
+            
             cl(ch)
             for i = 1, #validParts do
                 ch[i] = validParts[i]
@@ -740,6 +807,9 @@ function Esp:Upd()
         end
         
         if #ch == 0 then
+            if self.plr == lp then
+                print("[ESP DEBUG] Кеш пустой! onSc = false")
+            end
             self.onSc = false
             return
         end
@@ -752,6 +822,9 @@ function Esp:Upd()
         end
         
         if #validCachedParts ~= #ch then
+            if self.plr == lp then
+                print("[ESP DEBUG] Части из кеша стали невалидными! Сброс кеша")
+            end
             cl(ch)
             self.bodyPartsHash = nil
             self.lastCacheTime = 0
@@ -761,6 +834,9 @@ function Esp:Upd()
         
         local cf, sz = getBB(validCachedParts)
         if not cf or not sz then
+            if self.plr == lp then
+                print("[ESP DEBUG] getBB вернул nil! Сброс кеша")
+            end
             cl(self.charCache)
             self.bodyPartsHash = nil
             self.lastCacheTime = 0
