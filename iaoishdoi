@@ -267,6 +267,25 @@ function Esp:init()
 	self.charConns = {}
 	self.bodyPartsHash = nil
 	self.skelHash = nil
+	self.playerConns = {}
+	
+	if self.plr then
+		self.playerConns[1] = self.plr.CharacterAdded:Connect(function(char)
+			task.wait(0.1)
+			cl(self.charCache)
+			self.cacheChar = char
+			self.childCnt = 0
+			self.lastCacheTime = 0
+			self.bodyPartsHash = nil
+			self.skelHash = nil
+			
+			for _, conn in pairs(self.charConns) do
+				pcall(function() conn:Disconnect() end)
+			end
+			cl(self.charConns)
+		end)
+	end
+	
 	self.av = Instance.new("ImageLabel")
 	self.av.Name = "\0"
 	self.av.BackgroundTransparency = 1
@@ -394,10 +413,16 @@ function Esp:init()
 end
 
 function Esp:Dest()
+	for _, conn in pairs(self.playerConns) do
+		pcall(function() conn:Disconnect() end)
+	end
+	cl(self.playerConns)
+	
 	for _, conn in pairs(self.charConns) do
 		pcall(function() conn:Disconnect() end)
 	end
 	cl(self.charConns)
+	
 	for i = 1, #self.bin do
 		self.bin[i]:Remove()
 	end
@@ -1261,13 +1286,34 @@ function Cham:init()
 	self.acc = 0
 	self.cacheChar = nil
 	self.charConns = {}
+	self.playerConns = {}
+	
+	if self.plr then
+		self.playerConns[1] = self.plr.CharacterAdded:Connect(function(char)
+			task.wait(0.1)
+			self:ClearOcclusion()
+			self:RestoreMaterials()
+			self.cacheChar = char
+			
+			for _, conn in pairs(self.charConns) do
+				pcall(function() conn:Disconnect() end)
+			end
+			cl(self.charConns)
+		end)
+	end
 end
 
 function Cham:Dest()
+	for _, conn in pairs(self.playerConns) do
+		pcall(function() conn:Disconnect() end)
+	end
+	cl(self.playerConns)
+	
 	for _, conn in pairs(self.charConns) do
 		pcall(function() conn:Disconnect() end)
 	end
 	cl(self.charConns)
+	
 	if self.hl then self.hl:Destroy() end
 	self:ClearOcclusion()
 	self:RestoreMaterials()
