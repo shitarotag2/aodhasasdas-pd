@@ -271,7 +271,7 @@ function Esp:init()
 	self.playerConns = {}
 	
 	if self.plr then
-		self.playerConns[1] = self.plr.CharacterAdded:Connect(function(char)
+		local function onCharacterAdded(char)
 			task.wait(0.1)
 			cl(self.charCache)
 			self.cacheChar = char
@@ -284,7 +284,15 @@ function Esp:init()
 				pcall(function() conn:Disconnect() end)
 			end
 			cl(self.charConns)
-		end)
+		end
+		
+		self.playerConns[1] = self.plr.CharacterAdded:Connect(onCharacterAdded)
+		
+		if self.plr.Character then
+			task.spawn(function()
+				onCharacterAdded(self.plr.Character)
+			end)
+		end
 	end
 	
 	self.av = Instance.new("ImageLabel")
@@ -1308,7 +1316,7 @@ function Cham:init()
 	self.playerConns = {}
 	
 	if self.plr then
-		self.playerConns[1] = self.plr.CharacterAdded:Connect(function(char)
+		local function onCharacterAdded(char)
 			task.wait(0.1)
 			self:ClearOcclusion()
 			self:RestoreMaterials()
@@ -1318,7 +1326,15 @@ function Cham:init()
 				pcall(function() conn:Disconnect() end)
 			end
 			cl(self.charConns)
-		end)
+		end
+		
+		self.playerConns[1] = self.plr.CharacterAdded:Connect(onCharacterAdded)
+		
+		if self.plr.Character then
+			task.spawn(function()
+				onCharacterAdded(self.plr.Character)
+			end)
+		end
 	end
 end
 
