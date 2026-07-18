@@ -59,7 +59,8 @@ local VERTS = {
 }
 
 local function isBP(n)
-	return n == "Head" or n:find("Torso") or n:find("Leg") or n:find("Arm")
+	return n == "Head" or n:find("Torso") or n:find("Leg") or n:find("Arm") or 
+	       n == "LeftFoot" or n == "RightFoot" or n == "LeftHand" or n == "RightHand"
 end
 
 local function isCP(p)
@@ -703,13 +704,11 @@ function Esp:Upd()
     if self.onSc then
 		self:updateSkel()
         local ch = self.charCache
-        local kids = gc(self.char)
         local now = tick()
         self.lastCacheTime = self.lastCacheTime or 0
         
         local validParts = {}
-        for i = 1, #kids do
-            local p = kids[i]
+        for _, p in ipairs(self.char:GetDescendants()) do
             if isA(p, "BasePart") and isBP(p.Name) and p.Parent then
                 validParts[#validParts + 1] = p
             end
@@ -717,10 +716,13 @@ function Esp:Upd()
         
         local currentHash = #validParts
         for i = 1, #validParts do
-            currentHash = currentHash + (validParts[i]:GetFullName():len() * i)
+            local p = validParts[i]
+            if p and p.Parent then
+                currentHash = currentHash + p.Name:len() * i + (p.Size.Magnitude * 100)
+            end
         end
         
-        if not ch[1] or self.bodyPartsHash ~= currentHash or (now - self.lastCacheTime) > 0.5 then
+        if not ch[1] or self.bodyPartsHash ~= currentHash or (now - self.lastCacheTime) > 0.3 then
             cl(ch)
             for i = 1, #validParts do
                 ch[i] = validParts[i]
@@ -734,7 +736,22 @@ function Esp:Upd()
             return
         end
         
-        local cf, sz = getBB(ch)
+        local validCachedParts = {}
+        for i = 1, #ch do
+            if ch[i] and ch[i].Parent then
+                validCachedParts[#validCachedParts + 1] = ch[i]
+            end
+        end
+        
+        if #validCachedParts ~= #ch then
+            cl(ch)
+            self.bodyPartsHash = nil
+            self.lastCacheTime = 0
+            self.onSc = false
+            return
+        end
+        
+        local cf, sz = getBB(validCachedParts)
         if not cf or not sz then
             cl(self.charCache)
             self.bodyPartsHash = nil
@@ -1194,7 +1211,7 @@ end
 function Esp:updateSkel()
     if not self.char or not self.onSc then return end
     
-    local bodyPartsChecklist = {
+    local r15Parts = {
         "Head", "UpperTorso", "LowerTorso",
         "LeftUpperArm", "RightUpperArm", 
         "LeftLowerArm", "RightLowerArm",
@@ -1202,11 +1219,37 @@ function Esp:updateSkel()
         "LeftLowerLeg", "RightLowerLeg"
     }
     
+    local r6Parts = {
+        "Head", "Torso",
+        "Left Arm", "Right Arm",
+        "Left Leg", "Right Leg"
+    }
+    
+    local function tryFind(names)
+        for _, name in ipairs(names) do
+            local part = self.char:FindFirstChild(name, true)
+            if part then return part end
+        end
+        return nil
+    end
+    
+    local hd = tryFind({"Head"})
+    local ur = tryFind({"UpperTorso", "Torso"})
+    local lr = tryFind({"LowerTorso", "Torso"})
+    local lua = tryFind({"LeftUpperArm", "Left Arm"})
+    local rua = tryFind({"RightUpperArm", "Right Arm"})
+    local lfa = tryFind({"LeftLowerArm", "LeftHand", "Left Arm"})
+    local rfa = tryFind({"RightLowerArm", "RightHand", "Right Arm"})
+    local lul = tryFind({"LeftUpperLeg", "Left Leg"})
+    local rul = tryFind({"RightUpperLeg", "Right Leg"})
+    local lll = tryFind({"LeftLowerLeg", "LeftFoot", "Left Leg"})
+    local rll = tryFind({"RightLowerLeg", "RightFoot", "Right Leg"})
+    
     local currentSkelHash = 0
-    for _, name in ipairs(bodyPartsChecklist) do
-        local part = self.char:FindFirstChild(name, true)
-        if part then
-            currentSkelHash = currentSkelHash + (part:GetFullName():len())
+    local parts = {hd, ur, lr, lua, rua, lfa, rfa, lul, rul, lll, rll}
+    for _, part in ipairs(parts) do
+        if part and part.Parent then
+            currentSkelHash = currentSkelHash + part.Name:len() + (part.Size.Magnitude * 10)
         end
     end
     
@@ -1214,56 +1257,32 @@ function Esp:updateSkel()
         self.skelHash = currentSkelHash
         local skpts = {}
         
-        local hd = self.char:FindFirstChild("Head", true)
-        local ur = self.char:FindFirstChild("UpperTorso", true)
-        local lr = self.char:FindFirstChild("LowerTorso", true)
-        local lua = self.char:FindFirstChild("LeftUpperArm", true)
-        local rua = self.char:FindFirstChild("RightUpperArm", true)
-        local lfa = self.char:FindFirstChild("LeftLowerArm", true)
-        local rfa = self.char:FindFirstChild("RightLowerArm", true)
-        local lul = self.char:FindFirstChild("LeftUpperLeg", true)
-        local rul = self.char:FindFirstChild("RightUpperLeg", true)
-        local lll = self.char:FindFirstChild("LeftLowerLeg", true)
-        local rll = self.char:FindFirstChild("RightLowerLeg", true)
-        
-        if hd then skpts.hd = hd.CFrame.Position end
-        if ur then skpts.ur = ur.CFrame.Position end
-        if lr then skpts.lr = lr.CFrame.Position end
-        if lua then skpts.lua = lua.CFrame.Position end
-        if rua then skpts.rua = rua.CFrame.Position end
-        if lfa then skpts.lfa = lfa.CFrame.Position end
-        if rfa then skpts.rfa = rfa.CFrame.Position end
-        if lul then skpts.lul = lul.CFrame.Position end
-        if rul then skpts.rul = rul.CFrame.Position end
-        if lll then skpts.lll = lll.CFrame.Position end
-        if rll then skpts.rll = rll.CFrame.Position end
+        if hd and hd.Parent then skpts.hd = hd.CFrame.Position end
+        if ur and ur.Parent then skpts.ur = ur.CFrame.Position end
+        if lr and lr.Parent then skpts.lr = lr.CFrame.Position end
+        if lua and lua.Parent then skpts.lua = lua.CFrame.Position end
+        if rua and rua.Parent then skpts.rua = rua.CFrame.Position end
+        if lfa and lfa.Parent then skpts.lfa = lfa.CFrame.Position end
+        if rfa and rfa.Parent then skpts.rfa = rfa.CFrame.Position end
+        if lul and lul.Parent then skpts.lul = lul.CFrame.Position end
+        if rul and rul.Parent then skpts.rul = rul.CFrame.Position end
+        if lll and lll.Parent then skpts.lll = lll.CFrame.Position end
+        if rll and rll.Parent then skpts.rll = rll.CFrame.Position end
         
         self.skpts = skpts
     else
         if self.skpts then
-            local hd = self.char:FindFirstChild("Head", true)
-            local ur = self.char:FindFirstChild("UpperTorso", true)
-            local lr = self.char:FindFirstChild("LowerTorso", true)
-            local lua = self.char:FindFirstChild("LeftUpperArm", true)
-            local rua = self.char:FindFirstChild("RightUpperArm", true)
-            local lfa = self.char:FindFirstChild("LeftLowerArm", true)
-            local rfa = self.char:FindFirstChild("RightLowerArm", true)
-            local lul = self.char:FindFirstChild("LeftUpperLeg", true)
-            local rul = self.char:FindFirstChild("RightUpperLeg", true)
-            local lll = self.char:FindFirstChild("LeftLowerLeg", true)
-            local rll = self.char:FindFirstChild("RightLowerLeg", true)
-            
-            if hd then self.skpts.hd = hd.CFrame.Position end
-            if ur then self.skpts.ur = ur.CFrame.Position end
-            if lr then self.skpts.lr = lr.CFrame.Position end
-            if lua then self.skpts.lua = lua.CFrame.Position end
-            if rua then self.skpts.rua = rua.CFrame.Position end
-            if lfa then self.skpts.lfa = lfa.CFrame.Position end
-            if rfa then self.skpts.rfa = rfa.CFrame.Position end
-            if lul then self.skpts.lul = lul.CFrame.Position end
-            if rul then self.skpts.rul = rul.CFrame.Position end
-            if lll then self.skpts.lll = lll.CFrame.Position end
-            if rll then self.skpts.rll = rll.CFrame.Position end
+            if hd and hd.Parent then self.skpts.hd = hd.CFrame.Position end
+            if ur and ur.Parent then self.skpts.ur = ur.CFrame.Position end
+            if lr and lr.Parent then self.skpts.lr = lr.CFrame.Position end
+            if lua and lua.Parent then self.skpts.lua = lua.CFrame.Position end
+            if rua and rua.Parent then self.skpts.rua = rua.CFrame.Position end
+            if lfa and lfa.Parent then self.skpts.lfa = lfa.CFrame.Position end
+            if rfa and rfa.Parent then self.skpts.rfa = rfa.CFrame.Position end
+            if lul and lul.Parent then self.skpts.lul = lul.CFrame.Position end
+            if rul and rul.Parent then self.skpts.rul = rul.CFrame.Position end
+            if lll and lll.Parent then self.skpts.lll = lll.CFrame.Position end
+            if rll and rll.Parent then self.skpts.rll = rll.CFrame.Position end
         end
     end
 end
