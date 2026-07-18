@@ -66,6 +66,12 @@ local function isCP(p)
 	return p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" and p.Name ~= "GlowShell"
 end
 
+local function isValidBodyPart(p)
+	if not p:IsA("BasePart") then return false end
+	if p.Name == "HumanoidRootPart" or p.Name == "GlowShell" then return false end
+	return true
+end
+
 local function getBB(parts)
 	local mn, mx
 	for i = 1, #parts do
@@ -608,6 +614,16 @@ function Esp:Upd()
                     ch[#ch + 1] = p
                 end
             end
+            
+            if #ch == 0 then
+                for i = 1, #kids do
+                    local p = kids[i]
+                    if isValidBodyPart(p) and p.Parent == self.char then
+                        ch[#ch + 1] = p
+                    end
+                end
+            end
+            
             self.childCnt = #kids
             self.cacheChar = self.char
         end
