@@ -67,45 +67,82 @@ local function isCP(p)
 end
 
 local function isValidBodyPart(p)
+	if not p or not p.Parent then return false end
 	if not p:IsA("BasePart") then return false end
 	if p.Name == "HumanoidRootPart" or p.Name == "GlowShell" then return false end
+	if p.Size.Magnitude == 0 then return false end
 	return true
 end
 
-local function getBB(parts)
-	if #parts == 0 then
-		return CFrame.new(), Vector3.new(2, 2, 2)
+local function getCharacterParts(char)
+	if not char or not char.Parent then
+		return {}
 	end
 	
-	local mn, mx
-	for i = 1, #parts do
-		local p = parts[i]
-		if p and p.Parent and p:IsA("BasePart") then
-			local success, cf, sz = pcall(function()
-				return p.CFrame, p.Size
-			end)
-			if success and cf and sz and sz.Magnitude > 0 then
-				local minPos = (cf - sz*0.5).Position
-				local maxPos = (cf + sz*0.5).Position
-				mn = m3(mn or cf.Position, minPos)
-				mx = m3x(mx or cf.Position, maxPos)
+	local parts = {}
+	local children = gc(char)
+	
+	for i = 1, #children do
+		local child = children[i]
+		if child:IsA("BasePart") and isBP(child.Name) then
+			if isValidBodyPart(child) then
+				parts[#parts + 1] = child
 			end
 		end
 	end
 	
-	if not mn or not mx then
-		return CFrame.new(), Vector3.new(2, 2, 2)
+	if #parts == 0 then
+		for i = 1, #children do
+			local child = children[i]
+			if isValidBodyPart(child) then
+				parts[#parts + 1] = child
+			end
+		end
 	end
 	
-	local c = (mn + mx)*0.5
-	local sz = mx - mn
-	
-	if sz.Magnitude == 0 or sz.X == 0 or sz.Y == 0 or sz.Z == 0 then
-		sz = Vector3.new(math.max(sz.X, 2), math.max(sz.Y, 2), math.max(sz.Z, 2))
+	return parts
+end
+
+local function getBB(parts)
+	if not parts or #parts == 0 then
+		return nil, nil
 	end
 	
-	local f = Vector3.new(c.X, c.Y, mx.Z)
-	return CFrame.new(c, f), sz
+	local mn, mx
+	local validCount = 0
+	
+	for i = 1, #parts do
+		local part = parts[i]
+		if part and part.Parent then
+			local cf = part.CFrame
+			local sz = part.Size
+			
+			if sz.Magnitude > 0 then
+				local minPos = (cf - sz * 0.5).Position
+				local maxPos = (cf + sz * 0.5).Position
+				
+				if not mn then
+					mn = minPos
+					mx = maxPos
+				else
+					mn = m3(mn, minPos)
+					mx = m3x(mx, maxPos)
+				end
+				
+				validCount = validCount + 1
+			end
+		end
+	end
+	
+	if validCount == 0 or not mn or not mx then
+		return nil, nil
+	end
+	
+	local center = (mn + mx) * 0.5
+	local size = mx - mn
+	local front = Vector3.new(center.X, center.Y, mx.Z)
+	
+	return CFrame.new(center, front), size
 end
 
 local function w2sc(w)
@@ -227,6 +264,7 @@ end
 
 function Esp:init()
 	self.charCache = {}
+	self.cacheValid = false
 	self.childCnt = 0
 	self.bin = {}
 	self.ph = math.random()
@@ -392,16 +430,8 @@ function Esp:setupCharEvents(char)
 	
 	self:disconnectCharEvents()
 	
-	local debounce = false
 	local function invalidateCache()
-		if debounce then return end
-		debounce = true
-		task.wait(0.05)
-		self.charCache = {}
-		self.childCnt = 0
-		self.cacheChar = nil
-		self.skpts = nil
-		debounce = false
+		self.cacheValid = false
 	end
 	
 	self.charConnections.childAdded = char.ChildAdded:Connect(invalidateCache)
@@ -416,6 +446,40 @@ function Esp:setupCharEvents(char)
 			invalidateCache()
 		end
 	end)
+end
+
+function Esp:validateCache()
+	if not self.char or not self.char.Parent then
+		return false
+	end
+	
+	if self.cacheValid == false then
+		return false
+	end
+	
+	if #self.charCache == 0 then
+		return false
+	end
+	
+	for i = 1, math.min(3, #self.charCache) do
+		local part = self.charCache[i]
+		if not part or not part.Parent or part.Parent ~= self.char then
+			return false
+		end
+	end
+	
+	return true
+end
+
+function Esp:rebuildCache()
+	if not self.char or not self.char.Parent then
+		self.charCache = {}
+		return
+	end
+	
+	local newCache = getCharacterParts(self.char)
+	self.charCache = newCache
+	self.cacheValid = true
 end
 
 function Esp:gradTxt(pool, text, cx, topY, sz, fnt, out, oc, tr, c1, c2, off)
@@ -610,6 +674,7 @@ function Esp:Upd()
         self.char = nil
         self.onSc = false
         self.charCache = {}
+        self.cacheValid = false
         self.skpts = nil
         self:disconnectCharEvents()
         return
@@ -619,6 +684,7 @@ function Esp:Upd()
     if newChar ~= self.char then
         self.char = newChar
         self.charCache = {}
+        self.cacheValid = false
         self.childCnt = 0
         self.cacheChar = nil
         self.skpts = nil
@@ -639,6 +705,7 @@ function Esp:Upd()
     local hd = self.en and fc(self.char, "Head")
     if not hd or not hd.Parent then
         self.charCache = {}
+        self.cacheValid = false
         self.skpts = nil
         self.onSc = false
         return
@@ -669,68 +736,21 @@ function Esp:Upd()
 
     if self.onSc then
 		self:updateSkel()
-        local ch = self.charCache
-        local kids = gc(self.char)
-        local needUpdate = not ch[1] or self.childCnt ~= #kids or self.cacheChar ~= self.char
         
-        if needUpdate then
-            cl(ch)
-            for i = 1, #kids do
-                local p = kids[i]
-                if p and p.Parent == self.char and isA(p, "BasePart") and isBP(p.Name) then
-                    local success = pcall(function()
-                        local _ = p.CFrame
-                        local _ = p.Size
-                    end)
-                    if success then
-                        ch[#ch + 1] = p
-                    end
-                end
-            end
-            
-            if #ch == 0 then
-                for i = 1, #kids do
-                    local p = kids[i]
-                    if p and p.Parent == self.char and isValidBodyPart(p) then
-                        local success = pcall(function()
-                            local _ = p.CFrame
-                            local _ = p.Size
-                        end)
-                        if success then
-                            ch[#ch + 1] = p
-                        end
-                    end
-                end
-            end
-            
-            self.childCnt = #kids
-            self.cacheChar = self.char
+        if #self.charCache == 0 or not self.cacheValid then
+            self:rebuildCache()
         end
         
-        local validParts = {}
-        for i = 1, #ch do
-            local part = ch[i]
-            if part and part.Parent == self.char then
-                local valid = pcall(function()
-                    local _ = part.CFrame
-                    local _ = part.Size
-                end)
-                if valid then
-                    validParts[#validParts + 1] = part
-                end
-            end
-        end
-        
-        if #validParts == 0 then
+        if #self.charCache == 0 then
             self.onSc = false
-            self.charCache = {}
             return
         end
         
-        local cf, sz = getBB(validParts)
+        local cf, sz = getBB(self.charCache)
         
-        if not cf or not sz or sz.Magnitude == 0 then
+        if not cf or not sz then
             self.onSc = false
+            self.cacheValid = false
             return
         end
         
@@ -1751,6 +1771,39 @@ function Itf.Load()
 		end
 	end)
 	
+	local validatorIndex = 1
+	local validatorDelay = 0
+	Itf.cacheValidator = run.Heartbeat:Connect(function(dt)
+		validatorDelay = validatorDelay + dt
+		if validatorDelay < 0.1 then return end
+		validatorDelay = 0
+		
+		local allPlayers = {}
+		for plr, _ in next, Itf._objCache do
+			allPlayers[#allPlayers + 1] = plr
+		end
+		
+		if #allPlayers == 0 then return end
+		
+		local checksPerFrame = math.max(1, math.ceil(#allPlayers / 10))
+		
+		for i = 1, checksPerFrame do
+			validatorIndex = validatorIndex + 1
+			if validatorIndex > #allPlayers then
+				validatorIndex = 1
+			end
+			
+			local plr = allPlayers[validatorIndex]
+			local objs = Itf._objCache[plr]
+			
+			if objs and objs[1] and objs[1].validateCache then
+				if not objs[1]:validateCache() then
+					objs[1].cacheValid = false
+				end
+			end
+		end
+	end)
+	
 	Itf._loaded = true
 end
 
@@ -1807,6 +1860,11 @@ function Itf.Unload()
 	if Itf.mainRender then
 		Itf.mainRender:Disconnect()
 		Itf.mainRender = nil
+	end
+	
+	if Itf.cacheValidator then
+		Itf.cacheValidator:Disconnect()
+		Itf.cacheValidator = nil
 	end
 
 	for idx, o in next, Itf._objCache do
