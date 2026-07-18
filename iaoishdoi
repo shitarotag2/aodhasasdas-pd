@@ -70,13 +70,26 @@ local function getBB(parts)
 	local mn, mx
 	for i = 1, #parts do
 		local p = parts[i]
+		if not p or not p.Parent then
+			return nil, nil
+		end
 		local cf, sz = p.CFrame, p.Size
+		if not cf or not sz then
+			return nil, nil
+		end
 		mn = m3(mn or cf.Position, (cf - sz*0.5).Position)
 		mx = m3x(mx or cf.Position, (cf + sz*0.5).Position)
 	end
+	if not mn or not mx then
+		return nil, nil
+	end
+	local size = mx - mn
+	if size.Magnitude > 500 or size.Magnitude < 0.1 then
+		return nil, nil
+	end
 	local c = (mn + mx)*0.5
 	local f = Vector3.new(c.X, c.Y, mx.Z)
-	return CFrame.new(c, f), mx - mn
+	return CFrame.new(c, f), size
 end
 
 local function w2sc(w)
@@ -85,12 +98,32 @@ local function w2sc(w)
 end
 
 local function calcCorn(cf, sz)
+	if not cf or not sz then
+		return {
+			corners = {},
+			tl = Vector2.new(0, 0),
+			tr = Vector2.new(0, 0),
+			bl = Vector2.new(0, 0),
+			br = Vector2.new(0, 0)
+		}
+	end
 	local corn = cr(#VERTS)
 	for i = 1, #VERTS do
 		corn[i] = w2sc((cf + sz*0.5*VERTS[i]).Position)
 	end
 	local mn = m2(vs, up(corn))
 	local mx = m2x(Vector2.zero, up(corn))
+	
+	if (mx - mn).Magnitude > 5000 then
+		return {
+			corners = {},
+			tl = Vector2.new(0, 0),
+			tr = Vector2.new(0, 0),
+			bl = Vector2.new(0, 0),
+			br = Vector2.new(0, 0)
+		}
+	end
+	
 	return {
 		corners = corn,
 		tl = Vector2.new(fl(mn.X), fl(mn.Y)),
@@ -101,6 +134,16 @@ local function calcCorn(cf, sz)
 end
 
 local function calcCornViewport(cf, sz, vpCam, vpFrame)
+	if not cf or not sz then
+		return {
+			corners = {},
+			tl = Vector2.new(0, 0),
+			tr = Vector2.new(0, 0),
+			bl = Vector2.new(0, 0),
+			br = Vector2.new(0, 0)
+		}
+	end
+	
 	local hrp = cf.Position
 	local distance = (vpCam.CFrame.Position - hrp).Magnitude
 	
@@ -124,6 +167,16 @@ local function calcCornViewport(cf, sz, vpCam, vpFrame)
 	
 	local boxHeight = sz.Y * factorY * 1.15
 	local boxWidth = sz.X * factorX
+	
+	if boxHeight > 5000 or boxWidth > 5000 or boxHeight < 1 or boxWidth < 1 then
+		return {
+			corners = {},
+			tl = Vector2.new(0, 0),
+			tr = Vector2.new(0, 0),
+			bl = Vector2.new(0, 0),
+			br = Vector2.new(0, 0)
+		}
+	end
 	
 	local guiInset = guiService:GetGuiInset()
 	local offsetY = guiInset.Y
@@ -599,11 +652,35 @@ function Esp:Upd()
             self.cacheChar = self.char
         end
         
+        local validCache = true
+        for i = 1, #ch do
+            if not ch[i] or not ch[i].Parent then
+                validCache = false
+                break
+            end
+        end
+        
+        if not validCache then
+            cl(ch)
+            for i = 1, #kids do
+                local p = kids[i]
+                if isA(p, "BasePart") and isBP(p.Name) then
+                    ch[#ch + 1] = p
+                end
+            end
+            self.childCnt = #kids
+        end
+        
+        local cf, sz = getBB(ch)
+        if not cf or not sz then
+            self.onSc = false
+            return
+        end
+        
         if viewport then
-            local cf, sz = getBB(ch)
             self.corn = calcCornViewport(cf, sz, activeCam, viewport)
         else
-            self.corn = calcCorn(getBB(ch))
+            self.corn = calcCorn(cf, sz)
         end
     elseif self.opt.offAr and not cloneInfo then
         local cf = activeCam.CFrame
