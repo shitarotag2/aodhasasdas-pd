@@ -216,6 +216,7 @@ function Esp:init()
 	self.cnk = {}
 	self.rs = {}
 	self.rso = {}
+	self.charConnections = {}
 	self.av = Instance.new("ImageLabel")
 	self.av.Name = "\0"
 	self.av.BackgroundTransparency = 1
@@ -350,7 +351,43 @@ function Esp:Dest()
 	if self.gf then self.gf:Destroy() end
 	if self.ob then self.ob:Destroy() end
 	if self.obk then self.obk:Destroy() end
+	self:disconnectCharEvents()
 	cl(self)
+end
+
+function Esp:disconnectCharEvents()
+	for _, conn in pairs(self.charConnections) do
+		if conn and conn.Disconnect then
+			conn:Disconnect()
+		end
+	end
+	self.charConnections = {}
+end
+
+function Esp:setupCharEvents(char)
+	if not char then return end
+	
+	self:disconnectCharEvents()
+	
+	local function invalidateCache()
+		self.charCache = {}
+		self.childCnt = 0
+		self.cacheChar = nil
+		self.skpts = nil
+	end
+	
+	self.charConnections.childAdded = char.ChildAdded:Connect(invalidateCache)
+	self.charConnections.childRemoved = char.ChildRemoved:Connect(invalidateCache)
+	self.charConnections.descendantAdded = char.DescendantAdded:Connect(function(desc)
+		if desc:IsA("BasePart") then
+			invalidateCache()
+		end
+	end)
+	self.charConnections.descendantRemoving = char.DescendantRemoving:Connect(function(desc)
+		if desc:IsA("BasePart") then
+			invalidateCache()
+		end
+	end)
 end
 
 function Esp:gradTxt(pool, text, cx, topY, sz, fnt, out, oc, tr, c1, c2, off)
@@ -546,6 +583,7 @@ function Esp:Upd()
         self.onSc = false
         self.charCache = {}
         self.skpts = nil
+        self:disconnectCharEvents()
         return
     end
     
@@ -556,6 +594,7 @@ function Esp:Upd()
         self.childCnt = 0
         self.cacheChar = nil
         self.skpts = nil
+        self:setupCharEvents(newChar)
     end
     
     self.hp, self.maxHp = itf.getHp(self.plr)
@@ -630,7 +669,7 @@ function Esp:Upd()
         
         local validParts = {}
         for i = 1, #ch do
-            if ch[i].Parent == self.char then
+            if ch[i] and ch[i].Parent == self.char then
                 validParts[#validParts + 1] = ch[i]
             end
         end
@@ -641,11 +680,19 @@ function Esp:Upd()
             return
         end
         
+        local success, cf, sz = pcall(function()
+            return getBB(validParts)
+        end)
+        
+        if not success or not cf or not sz then
+            self.onSc = false
+            return
+        end
+        
         if viewport then
-            local cf, sz = getBB(validParts)
             self.corn = calcCornViewport(cf, sz, activeCam, viewport)
         else
-            self.corn = calcCorn(getBB(validParts))
+            self.corn = calcCorn(cf, sz)
         end
     elseif self.opt.offAr and not cloneInfo then
         local cf = activeCam.CFrame
