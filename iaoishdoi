@@ -73,16 +73,39 @@ local function isValidBodyPart(p)
 end
 
 local function getBB(parts)
+	if #parts == 0 then
+		return CFrame.new(), Vector3.new(2, 2, 2)
+	end
+	
 	local mn, mx
 	for i = 1, #parts do
 		local p = parts[i]
-		local cf, sz = p.CFrame, p.Size
-		mn = m3(mn or cf.Position, (cf - sz*0.5).Position)
-		mx = m3x(mx or cf.Position, (cf + sz*0.5).Position)
+		if p and p.Parent and p:IsA("BasePart") then
+			local success, cf, sz = pcall(function()
+				return p.CFrame, p.Size
+			end)
+			if success and cf and sz and sz.Magnitude > 0 then
+				local minPos = (cf - sz*0.5).Position
+				local maxPos = (cf + sz*0.5).Position
+				mn = m3(mn or cf.Position, minPos)
+				mx = m3x(mx or cf.Position, maxPos)
+			end
+		end
 	end
+	
+	if not mn or not mx then
+		return CFrame.new(), Vector3.new(2, 2, 2)
+	end
+	
 	local c = (mn + mx)*0.5
+	local sz = mx - mn
+	
+	if sz.Magnitude == 0 or sz.X == 0 or sz.Y == 0 or sz.Z == 0 then
+		sz = Vector3.new(math.max(sz.X, 2), math.max(sz.Y, 2), math.max(sz.Z, 2))
+	end
+	
 	local f = Vector3.new(c.X, c.Y, mx.Z)
-	return CFrame.new(c, f), mx - mn
+	return CFrame.new(c, f), sz
 end
 
 local function w2sc(w)
@@ -369,11 +392,16 @@ function Esp:setupCharEvents(char)
 	
 	self:disconnectCharEvents()
 	
+	local debounce = false
 	local function invalidateCache()
+		if debounce then return end
+		debounce = true
+		task.wait(0.05)
 		self.charCache = {}
 		self.childCnt = 0
 		self.cacheChar = nil
 		self.skpts = nil
+		debounce = false
 	end
 	
 	self.charConnections.childAdded = char.ChildAdded:Connect(invalidateCache)
@@ -649,16 +677,28 @@ function Esp:Upd()
             cl(ch)
             for i = 1, #kids do
                 local p = kids[i]
-                if isA(p, "BasePart") and isBP(p.Name) and p.Parent == self.char then
-                    ch[#ch + 1] = p
+                if p and p.Parent == self.char and isA(p, "BasePart") and isBP(p.Name) then
+                    local success = pcall(function()
+                        local _ = p.CFrame
+                        local _ = p.Size
+                    end)
+                    if success then
+                        ch[#ch + 1] = p
+                    end
                 end
             end
             
             if #ch == 0 then
                 for i = 1, #kids do
                     local p = kids[i]
-                    if isValidBodyPart(p) and p.Parent == self.char then
-                        ch[#ch + 1] = p
+                    if p and p.Parent == self.char and isValidBodyPart(p) then
+                        local success = pcall(function()
+                            local _ = p.CFrame
+                            local _ = p.Size
+                        end)
+                        if success then
+                            ch[#ch + 1] = p
+                        end
                     end
                 end
             end
@@ -669,8 +709,15 @@ function Esp:Upd()
         
         local validParts = {}
         for i = 1, #ch do
-            if ch[i] and ch[i].Parent == self.char then
-                validParts[#validParts + 1] = ch[i]
+            local part = ch[i]
+            if part and part.Parent == self.char then
+                local valid = pcall(function()
+                    local _ = part.CFrame
+                    local _ = part.Size
+                end)
+                if valid then
+                    validParts[#validParts + 1] = part
+                end
             end
         end
         
@@ -680,11 +727,9 @@ function Esp:Upd()
             return
         end
         
-        local success, cf, sz = pcall(function()
-            return getBB(validParts)
-        end)
+        local cf, sz = getBB(validParts)
         
-        if not success or not cf or not sz then
+        if not cf or not sz or sz.Magnitude == 0 then
             self.onSc = false
             return
         end
