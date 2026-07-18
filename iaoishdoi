@@ -265,6 +265,8 @@ function Esp:init()
 	self.rso = {}
 	self.cacheChar = nil
 	self.charConns = {}
+	self.bodyPartsHash = nil
+	self.skelHash = nil
 	self.av = Instance.new("ImageLabel")
 	self.av.Name = "\0"
 	self.av.BackgroundTransparency = 1
@@ -606,6 +608,7 @@ function Esp:Upd()
         self.cacheChar = newChar
         self.childCnt = 0
         self.lastCacheTime = 0
+        self.bodyPartsHash = nil
         
         for _, conn in pairs(self.charConns) do
             pcall(function() conn:Disconnect() end)
@@ -617,6 +620,7 @@ function Esp:Upd()
                 cl(self.charCache)
                 self.childCnt = 0
                 self.lastCacheTime = 0
+                self.bodyPartsHash = nil
             end
             
             self.charConns[1] = newChar.ChildAdded:Connect(invalidateCache)
@@ -677,17 +681,26 @@ function Esp:Upd()
         local kids = gc(self.char)
         local now = tick()
         self.lastCacheTime = self.lastCacheTime or 0
-        local forceRefresh = (now - self.lastCacheTime) > 0.5
         
-        if not ch[1] or self.childCnt ~= #kids or forceRefresh then
-            cl(ch)
-            for i = 1, #kids do
-                local p = kids[i]
-                if isA(p, "BasePart") and isBP(p.Name) and p.Parent then
-                    ch[#ch + 1] = p
-                end
+        local validParts = {}
+        for i = 1, #kids do
+            local p = kids[i]
+            if isA(p, "BasePart") and isBP(p.Name) and p.Parent then
+                validParts[#validParts + 1] = p
             end
-            self.childCnt = #kids
+        end
+        
+        local currentHash = #validParts
+        for i = 1, #validParts do
+            currentHash = currentHash + (validParts[i]:GetFullName():len() * i)
+        end
+        
+        if not ch[1] or self.bodyPartsHash ~= currentHash or (now - self.lastCacheTime) > 0.5 then
+            cl(ch)
+            for i = 1, #validParts do
+                ch[i] = validParts[i]
+            end
+            self.bodyPartsHash = currentHash
             self.lastCacheTime = now
         end
         
@@ -699,7 +712,7 @@ function Esp:Upd()
         local cf, sz = getBB(ch)
         if not cf or not sz then
             cl(self.charCache)
-            self.childCnt = 0
+            self.bodyPartsHash = nil
             self.lastCacheTime = 0
             self.onSc = false
             return
@@ -1155,37 +1168,79 @@ function Esp:Ren()
 end
 function Esp:updateSkel()
     if not self.char or not self.onSc then return end
-    local skpts = {}
     
-    local function findPart(name)
-        return self.char:FindFirstChild(name, true)
+    local bodyPartsChecklist = {
+        "Head", "UpperTorso", "LowerTorso",
+        "LeftUpperArm", "RightUpperArm", 
+        "LeftLowerArm", "RightLowerArm",
+        "LeftUpperLeg", "RightUpperLeg", 
+        "LeftLowerLeg", "RightLowerLeg"
+    }
+    
+    local currentSkelHash = 0
+    for _, name in ipairs(bodyPartsChecklist) do
+        local part = self.char:FindFirstChild(name, true)
+        if part then
+            currentSkelHash = currentSkelHash + (part:GetFullName():len())
+        end
     end
     
-    local hd = findPart("Head")
-    local ur = findPart("UpperTorso")
-    local lr = findPart("LowerTorso")
-    local lua = findPart("LeftUpperArm")
-    local rua = findPart("RightUpperArm")
-    local lfa = findPart("LeftLowerArm")
-    local rfa = findPart("RightLowerArm")
-    local lul = findPart("LeftUpperLeg")
-    local rul = findPart("RightUpperLeg")
-    local lll = findPart("LeftLowerLeg")
-    local rll = findPart("RightLowerLeg")
-    
-    if hd then skpts.hd = hd.CFrame.Position end
-    if ur then skpts.ur = ur.CFrame.Position end
-    if lr then skpts.lr = lr.CFrame.Position end
-    if lua then skpts.lua = lua.CFrame.Position end
-    if rua then skpts.rua = rua.CFrame.Position end
-    if lfa then skpts.lfa = lfa.CFrame.Position end
-    if rfa then skpts.rfa = rfa.CFrame.Position end
-    if lul then skpts.lul = lul.CFrame.Position end
-    if rul then skpts.rul = rul.CFrame.Position end
-    if lll then skpts.lll = lll.CFrame.Position end
-    if rll then skpts.rll = rll.CFrame.Position end
-    
-    self.skpts = skpts
+    if self.skelHash ~= currentSkelHash then
+        self.skelHash = currentSkelHash
+        local skpts = {}
+        
+        local hd = self.char:FindFirstChild("Head", true)
+        local ur = self.char:FindFirstChild("UpperTorso", true)
+        local lr = self.char:FindFirstChild("LowerTorso", true)
+        local lua = self.char:FindFirstChild("LeftUpperArm", true)
+        local rua = self.char:FindFirstChild("RightUpperArm", true)
+        local lfa = self.char:FindFirstChild("LeftLowerArm", true)
+        local rfa = self.char:FindFirstChild("RightLowerArm", true)
+        local lul = self.char:FindFirstChild("LeftUpperLeg", true)
+        local rul = self.char:FindFirstChild("RightUpperLeg", true)
+        local lll = self.char:FindFirstChild("LeftLowerLeg", true)
+        local rll = self.char:FindFirstChild("RightLowerLeg", true)
+        
+        if hd then skpts.hd = hd.CFrame.Position end
+        if ur then skpts.ur = ur.CFrame.Position end
+        if lr then skpts.lr = lr.CFrame.Position end
+        if lua then skpts.lua = lua.CFrame.Position end
+        if rua then skpts.rua = rua.CFrame.Position end
+        if lfa then skpts.lfa = lfa.CFrame.Position end
+        if rfa then skpts.rfa = rfa.CFrame.Position end
+        if lul then skpts.lul = lul.CFrame.Position end
+        if rul then skpts.rul = rul.CFrame.Position end
+        if lll then skpts.lll = lll.CFrame.Position end
+        if rll then skpts.rll = rll.CFrame.Position end
+        
+        self.skpts = skpts
+    else
+        if self.skpts then
+            local hd = self.char:FindFirstChild("Head", true)
+            local ur = self.char:FindFirstChild("UpperTorso", true)
+            local lr = self.char:FindFirstChild("LowerTorso", true)
+            local lua = self.char:FindFirstChild("LeftUpperArm", true)
+            local rua = self.char:FindFirstChild("RightUpperArm", true)
+            local lfa = self.char:FindFirstChild("LeftLowerArm", true)
+            local rfa = self.char:FindFirstChild("RightLowerArm", true)
+            local lul = self.char:FindFirstChild("LeftUpperLeg", true)
+            local rul = self.char:FindFirstChild("RightUpperLeg", true)
+            local lll = self.char:FindFirstChild("LeftLowerLeg", true)
+            local rll = self.char:FindFirstChild("RightLowerLeg", true)
+            
+            if hd then self.skpts.hd = hd.CFrame.Position end
+            if ur then self.skpts.ur = ur.CFrame.Position end
+            if lr then self.skpts.lr = lr.CFrame.Position end
+            if lua then self.skpts.lua = lua.CFrame.Position end
+            if rua then self.skpts.rua = rua.CFrame.Position end
+            if lfa then self.skpts.lfa = lfa.CFrame.Position end
+            if rfa then self.skpts.rfa = rfa.CFrame.Position end
+            if lul then self.skpts.lul = lul.CFrame.Position end
+            if rul then self.skpts.rul = rul.CFrame.Position end
+            if lll then self.skpts.lll = lll.CFrame.Position end
+            if rll then self.skpts.rll = rll.CFrame.Position end
+        end
+    end
 end
 local Cham = {}
 Cham.__index = Cham
@@ -1334,6 +1389,11 @@ function Cham:Upd(dt)
 			
 			self.charConns[1] = char.ChildAdded:Connect(invalidate)
 			self.charConns[2] = char.ChildRemoved:Connect(invalidate)
+			
+			local hum = char:FindFirstChildOfClass("Humanoid")
+			if hum then
+				self.charConns[3] = hum.Died:Connect(invalidate)
+			end
 		end
 	end
 	
