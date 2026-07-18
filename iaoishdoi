@@ -605,6 +605,7 @@ function Esp:Upd()
         cl(self.charCache)
         self.cacheChar = newChar
         self.childCnt = 0
+        self.lastCacheTime = 0
         
         for _, conn in pairs(self.charConns) do
             pcall(function() conn:Disconnect() end)
@@ -615,6 +616,7 @@ function Esp:Upd()
             local function invalidateCache()
                 cl(self.charCache)
                 self.childCnt = 0
+                self.lastCacheTime = 0
             end
             
             self.charConns[1] = newChar.ChildAdded:Connect(invalidateCache)
@@ -673,7 +675,11 @@ function Esp:Upd()
 		self:updateSkel()
         local ch = self.charCache
         local kids = gc(self.char)
-        if not ch[1] or self.childCnt ~= #kids then
+        local now = tick()
+        self.lastCacheTime = self.lastCacheTime or 0
+        local forceRefresh = (now - self.lastCacheTime) > 0.5
+        
+        if not ch[1] or self.childCnt ~= #kids or forceRefresh then
             cl(ch)
             for i = 1, #kids do
                 local p = kids[i]
@@ -682,6 +688,7 @@ function Esp:Upd()
                 end
             end
             self.childCnt = #kids
+            self.lastCacheTime = now
         end
         
         if #ch == 0 then
@@ -693,6 +700,7 @@ function Esp:Upd()
         if not cf or not sz then
             cl(self.charCache)
             self.childCnt = 0
+            self.lastCacheTime = 0
             self.onSc = false
             return
         end
