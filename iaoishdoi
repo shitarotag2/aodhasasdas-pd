@@ -264,6 +264,7 @@ function Esp:init()
 	self.rs = {}
 	self.rso = {}
 	self.cacheChar = nil
+	self.charConns = {}
 	self.av = Instance.new("ImageLabel")
 	self.av.Name = "\0"
 	self.av.BackgroundTransparency = 1
@@ -388,21 +389,13 @@ function Esp:init()
 			return Vector2.new(s.X, s.Y), inB, s.Z
 		end
 	end
-	
-	if self.plr and self.plr.CharacterAdded then
-		self.charConn = self.plr.CharacterAdded:Connect(function()
-			cl(self.charCache)
-			self.cacheChar = nil
-			self.childCnt = 0
-		end)
-	end
 end
 
 function Esp:Dest()
-	if self.charConn then
-		self.charConn:Disconnect()
-		self.charConn = nil
+	for _, conn in pairs(self.charConns) do
+		pcall(function() conn:Disconnect() end)
 	end
+	cl(self.charConns)
 	for i = 1, #self.bin do
 		self.bin[i]:Remove()
 	end
@@ -612,6 +605,26 @@ function Esp:Upd()
         cl(self.charCache)
         self.cacheChar = newChar
         self.childCnt = 0
+        
+        for _, conn in pairs(self.charConns) do
+            pcall(function() conn:Disconnect() end)
+        end
+        cl(self.charConns)
+        
+        if newChar then
+            local function invalidateCache()
+                cl(self.charCache)
+                self.childCnt = 0
+            end
+            
+            self.charConns[1] = newChar.ChildAdded:Connect(invalidateCache)
+            self.charConns[2] = newChar.ChildRemoved:Connect(invalidateCache)
+            
+            local hum = newChar:FindFirstChildOfClass("Humanoid")
+            if hum then
+                self.charConns[3] = hum.Died:Connect(invalidateCache)
+            end
+        end
     end
     
     self.char = newChar
@@ -1184,21 +1197,14 @@ function Cham:init()
 	self.matCache = {}
 	self.acc = 0
 	self.cacheChar = nil
-	
-	if self.plr and self.plr.CharacterAdded then
-		self.charConn = self.plr.CharacterAdded:Connect(function()
-			self:ClearOcclusion()
-			self:RestoreMaterials()
-			self.cacheChar = nil
-		end)
-	end
+	self.charConns = {}
 end
 
 function Cham:Dest()
-	if self.charConn then
-		self.charConn:Disconnect()
-		self.charConn = nil
+	for _, conn in pairs(self.charConns) do
+		pcall(function() conn:Disconnect() end)
 	end
+	cl(self.charConns)
 	if self.hl then self.hl:Destroy() end
 	self:ClearOcclusion()
 	self:RestoreMaterials()
@@ -1306,6 +1312,21 @@ function Cham:Upd(dt)
 		self:ClearOcclusion()
 		self:RestoreMaterials()
 		self.cacheChar = char
+		
+		for _, conn in pairs(self.charConns) do
+			pcall(function() conn:Disconnect() end)
+		end
+		cl(self.charConns)
+		
+		if char then
+			local function invalidate()
+				self:ClearOcclusion()
+				self:RestoreMaterials()
+			end
+			
+			self.charConns[1] = char.ChildAdded:Connect(invalidate)
+			self.charConns[2] = char.ChildRemoved:Connect(invalidate)
+		end
 	end
 	
 	local opt = itf.tSet[itf.isFr(self.plr) and "fr" or "en"]
